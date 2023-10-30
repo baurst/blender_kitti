@@ -418,7 +418,7 @@ def bmesh_join(list_of_bmeshes, list_of_matrices, *, normal_update=False, bmesh)
 
 
 def simple_scale_matrix(factor: np.array, direction: np.array):
-    dir_len = np.sqrt(np.sum(direction ** 2))
+    dir_len = np.sqrt(np.sum(direction**2))
     assert dir_len > 0.0, "direction vector of scale matrix may not have length zero"
     normalized_dir = direction / dir_len
     factor = 1.0 - factor
@@ -543,7 +543,7 @@ def add_flow_mesh(
 
         flow_vec = flow[flow_vec_idx]
 
-        flow_vec_unit = flow_vec / np.sqrt(np.sum(flow_vec ** 2))
+        flow_vec_unit = flow_vec / np.sqrt(np.sum(flow_vec**2))
 
         # rotation matrix R that rotates unit vector a onto unit vector b.
         v = np.cross(arrow_head_unit, flow_vec_unit)
@@ -621,3 +621,83 @@ def add_flow_mesh(
         scene.collection.objects.link(obj)
 
     return obj
+
+
+def create_cube_with_wireframe(
+    position: np.ndarray,
+    scale: np.ndarray,
+    rotation: np.ndarray,
+    wireframe_scale: float,
+    color: np.ndarray,
+):
+    # Create a new mesh cube
+    bpy.ops.object.select_all(action="DESELECT")
+    bpy.ops.mesh.primitive_cube_add(
+        size=1, enter_editmode=False, align="WORLD", location=position
+    )
+    cube = bpy.context.object
+
+    # Set scale and rotation
+    cube.scale = scale
+    cube.rotation_euler = rotation
+    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+
+    # Add wireframe modifier
+    bpy.ops.object.modifier_add(type="WIREFRAME")
+    wireframe_modifier = cube.modifiers[-1]
+    wireframe_modifier.thickness = wireframe_scale
+
+    # Create a new material with the given color
+    material = bpy.data.materials.new(name="CubeMaterial")
+    material.use_nodes = False
+    material.diffuse_color = color
+
+    # Assign the material to the cube
+    if len(cube.data.materials) > 0:
+        cube.data.materials[0] = material
+    else:
+        cube.data.materials.append(material)
+
+    return cube
+
+
+def add_boxes(
+    *,
+    scene,
+    boxes_pred: typing.Dict[str, np.ndarray] = None,
+    boxes_gt: typing.Dict[str, np.ndarray] = None,
+    confidence_threshold: float = 0.0,
+    bounding_box_wire_frame_scale=0.2,
+    name_prefix: str = "boxes",
+):
+    visu_boxes = []
+    if boxes_pred is not None:
+        num_boxes = boxes_pred["pos"].shape[0]
+        box_colors = np.ones((num_boxes, 4)) * np.array([[0.0, 0.0, 1.0, 1.0],])
+        visu_boxes.append({"boxes": boxes_pred,
+            "colors_rgba": box_colors})
+    if boxes_gt is not None:
+        num_boxes = boxes_gt["pos"].shape[0]
+        box_colors = np.ones((num_boxes, 4)) * np.array([[1.0, 0.0, 0.0, 1.0],])
+        visu_boxes.append({"boxes": boxes_gt,
+            "colors_rgba": box_colors})
+
+    for boxes_dict in visu_boxes:
+        boxes = boxes_dict["boxes"]
+        box_colors = boxes_dict["colors_rgba"]
+
+        num_boxes = boxes["pos"].shape[0]
+        for box_idx in range(num_boxes):
+            if np.squeeze(boxes["probs"][box_idx]) < confidence_threshold:
+                continue
+            print("Add box at", boxes["pos"][box_idx],
+                " - rotation ", boxes["rot"][box_idx])
+            cube = create_cube_with_wireframe(
+                position=boxes["pos"][box_idx],
+                scale=boxes["dims"][box_idx],
+                rotation=(0.0, 0.0, np.rad2deg(boxes["rot"][box_idx]),),
+                wireframe_scale=bounding_box_wire_frame_scale,
+                color=box_colors[box_idx],
+                )
+            scene.collection.objects.link(cube)
+
