@@ -695,7 +695,7 @@ def add_boxes(
             cube = create_cube_with_wireframe(
                 position=boxes["pos"][box_idx],
                 scale=boxes["dims"][box_idx],
-                rotation=(0.0, 0.0, np.rad2deg(boxes["rot"][box_idx]),),
+                rotation=(0.0, 0.0, boxes["rot"][box_idx],),
                 wireframe_scale=bounding_box_wire_frame_scale,
                 color=box_colors[box_idx],
                 )
