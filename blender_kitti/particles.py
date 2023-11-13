@@ -319,6 +319,39 @@ def add_voxel_list(
     return obj_voxels, {"color_selector": color_selector}
 
 
+def _add_point_cloud_chunk(
+    scene,
+    *,
+    points: np.ndarray,
+    colors: np.ndarray = None,
+    reflectivity: np.ndarray = None,
+    row_splits: np.ndarray = None,
+    name_prefix: str = "point_cloud",
+    particle_radius: float = 0.02,
+    material=None,
+    particle_obj=None,
+):
+    if particle_obj is None:
+        # created entities
+        obj_particle = create_icosphere(
+            name_prefix + "_icosphere", radius=particle_radius
+        )
+        scene.collection.objects.link(obj_particle)
+    else:
+        obj_particle = particle_obj
+
+    obj_point_cloud = _create_particle_instancer(name_prefix, points, obj_particle)
+    scene.collection.objects.link(obj_point_cloud)
+    color_selector = _add_material_to_particle(
+        name_prefix, colors, obj_particle, material
+    )
+
+    return (
+        obj_point_cloud,
+        {"color_selector": color_selector, "obj_particle": obj_particle},
+    )
+
+
 def add_point_cloud(
     scene,
     *,
@@ -344,25 +377,47 @@ def add_point_cloud(
     :param particle_obj: If given, use this object
     :return:
     """
-    if particle_obj is None:
-        # created entities
-        obj_particle = create_icosphere(
-            name_prefix + "_icosphere", radius=particle_radius
+    num_points = points.shape[0]
+    max_points_per_chunk = (
+        60000  # this is limited due to how GPUs work (texture memory)
+    )
+    if num_points < max_points_per_chunk:
+        return _add_point_cloud_chunk(
+            scene,
+            points=points,
+            colors=colors,
+            reflectivity=reflectivity,
+            row_splits=row_splits,
+            name_prefix=name_prefix,
+            particle_radius=particle_radius,
+            material=material,
+            particle_obj=particle_obj,
         )
-        scene.collection.objects.link(obj_particle)
     else:
-        obj_particle = particle_obj
-
-    obj_point_cloud = _create_particle_instancer(name_prefix, points, obj_particle)
-    scene.collection.objects.link(obj_point_cloud)
-    color_selector = _add_material_to_particle(
-        name_prefix, colors, obj_particle, material
-    )
-
-    return (
-        obj_point_cloud,
-        {"color_selector": color_selector, "obj_particle": obj_particle},
-    )
+        print("Chunking point cloud!")
+        assert reflectivity is None, "chunking not yet supported"
+        assert row_splits is None, "chunking not yet supported"
+        assert material is None, "chunking not yet supported"
+        assert particle_obj is None, "chunking not yet supported"
+        num_chunks = num_points // max_points_per_chunk
+        sub_points = np.array_split(points, num_chunks)
+        num_chunks = len(sub_points)
+        if colors is None:
+            sub_colors = [
+                None,
+            ] * num_chunks
+        else:
+            sub_colors = np.array_split(colors, num_chunks)
+        for chunk_idx, (pts_chunk, color_chunk) in enumerate(
+            zip(sub_points, sub_colors)
+        ):
+            _add_point_cloud_chunk(
+                scene,
+                points=pts_chunk,
+                colors=color_chunk,
+                name_prefix=name_prefix + f"_chunk_{chunk_idx}",
+                particle_radius=particle_radius,
+            )
 
 
 def read_verts(mesh):
