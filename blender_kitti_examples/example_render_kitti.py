@@ -59,7 +59,6 @@ def render(scene, cameras, output_path, *, bpy):
 
 
 def render_kitti_point_cloud(gpu_compute=False):
-
     scene = setup_scene()
     cameras = add_cameras_default(scene)
 
@@ -81,7 +80,6 @@ def render_kitti_point_cloud(gpu_compute=False):
 
 
 def render_kitti_scene_flow(gpu_compute=False):
-
     scene = setup_scene()
     cameras = add_cameras_default(scene)
 
@@ -115,7 +113,6 @@ def render_kitti_scene_flow(gpu_compute=False):
 
 
 def render_kitti_bounding_boxes(gpu_compute=True):
-
     scene = setup_scene()
     cameras = add_cameras_default(scene)
     scene.view_layers["ViewLayer"].cycles.use_denoising = True
@@ -130,7 +127,6 @@ def render_kitti_bounding_boxes(gpu_compute=True):
     else:
         scene.cycles.device = "CPU"
 
-    # reduce number of points, especially near vehicle
     point_cloud, colors = get_semantic_kitti_point_cloud()
     _ = add_point_cloud(points=point_cloud, colors=colors, scene=scene)
 
@@ -140,46 +136,95 @@ def render_kitti_bounding_boxes(gpu_compute=True):
     num_pred_boxes = 20
     num_gt_boxes = 10
 
-    max_box_dims = np.array([7.0,3.0,2.0])
+    max_box_dims = np.array([7.0, 3.0, 2.0])
 
     # random boxes
     boxes_pred = {
         "pos": box_range_min[None, ...]
         + np.random.rand(num_pred_boxes, 3)
         * (box_range_max - box_range_min)[None, ...],
-        "dims": np.random.rand(num_pred_boxes, 3) * max_box_dims[None,...],
+        "dims": np.random.rand(num_pred_boxes, 3) * max_box_dims[None, ...],
         "rot": 2 * np.pi * np.random.rand(num_pred_boxes, 1),
         "probs": np.random.rand(num_pred_boxes, 1),
     }
 
+    pred_box_colors = np.random.rand((boxes_pred["pos"].shape[0], 4))
+    pred_box_colors[:, -1] = 1.0
+
+    _ = add_boxes(
+        scene=scene,
+        boxes=boxes_pred,
+        box_colors_rgba_f64=pred_box_colors,
+        confidence_threshold=0.3,
+        verbose=True,
+    )
+
     boxes_gt = {
         "pos": box_range_min[None, ...]
-        + np.random.rand(num_gt_boxes, 3)
-        * (box_range_max - box_range_min)[None, ...],
-        "dims": np.random.rand(num_gt_boxes, 3) * max_box_dims[None,...],
+        + np.random.rand(num_gt_boxes, 3) * (box_range_max - box_range_min)[None, ...],
+        "dims": np.random.rand(num_gt_boxes, 3) * max_box_dims[None, ...],
         "rot": 2 * np.pi * np.random.rand(num_gt_boxes, 1),
         "probs": np.ones((num_gt_boxes, 1)),
     }
 
     boxes_gt = {
-            "pos" : np.array([[5.0,0.0,0.0,],[5.0,10.0,0.0,]]),
-            "dims" : np.array([[3.0,1.0,2.0,],[5.0,2.0,2.0,]]),
-            "rot": np.array([[np.pi/4,],[3*np.pi/4]]),
-            "probs": np.ones((2, 1)),
-            }
+        "pos": np.array(
+            [
+                [
+                    5.0,
+                    0.0,
+                    0.0,
+                ],
+                [
+                    5.0,
+                    10.0,
+                    0.0,
+                ],
+            ]
+        ),
+        "dims": np.array(
+            [
+                [
+                    3.0,
+                    1.0,
+                    2.0,
+                ],
+                [
+                    5.0,
+                    2.0,
+                    2.0,
+                ],
+            ]
+        ),
+        "rot": np.array(
+            [
+                [
+                    np.pi / 4,
+                ],
+                [3 * np.pi / 4],
+            ]
+        ),
+        "probs": np.ones((2, 1)),
+    }
+
+    gt_box_colors = np.ones((boxes_gt["pos"].shape[0], 4)) * np.array(
+        [
+            [1.0, 0.0, 0.0, 1.0],
+        ]
+    )
 
     _ = add_boxes(
         scene=scene,
-        boxes_pred=boxes_pred,
-        boxes_gt=boxes_gt,
+        boxes=boxes_gt,
+        box_colors_rgba_f64=gt_box_colors,
         confidence_threshold=0.3,
+        verbose=True,
     )
 
     render(scene, cameras, "/tmp/blender_kitti_render_boxes_{}.png", bpy=bpy)
 
 
 def render_kitti_voxels(gpu_compute=False):
-
     scene = setup_scene()
     cam_main = create_camera_perspective(
         location=(2.86, 17.52, 3.74),

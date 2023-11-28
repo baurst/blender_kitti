@@ -184,7 +184,6 @@ def _add_material_to_particle(name_prefix, colors, obj_particle, material=None):
 
 
 def create_cube(name_prefix: str, *, edge_length: float = 0.16):
-
     bm = bmesh.new()
     bmesh.ops.create_cube(
         bm,
@@ -207,7 +206,6 @@ def create_icosphere(
     radius: float = 0.02,
     use_smooth: bool = True,
 ):
-
     bm = bmesh.new()
     bmesh.ops.create_icosphere(
         bm,
@@ -685,29 +683,29 @@ def create_cube_with_wireframe(
     wireframe_scale: float,
     color: np.ndarray,
 ):
-    # Create a new mesh cube
+    # create a mesh cube
     bpy.ops.object.select_all(action="DESELECT")
     bpy.ops.mesh.primitive_cube_add(
         size=1, enter_editmode=False, align="WORLD", location=position
     )
     cube = bpy.context.object
 
-    # Set scale and rotation
+    # set scale and rotation
     cube.scale = scale
     cube.rotation_euler = rotation
     bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
 
-    # Add wireframe modifier
+    # add wireframe modifier
     bpy.ops.object.modifier_add(type="WIREFRAME")
     wireframe_modifier = cube.modifiers[-1]
     wireframe_modifier.thickness = wireframe_scale
 
-    # Create a new material with the given color
+    # create a new material with the given color
     material = bpy.data.materials.new(name="CubeMaterial")
     material.use_nodes = False
     material.diffuse_color = color
 
-    # Assign the material to the cube
+    # assign the material to the cube
     if len(cube.data.materials) > 0:
         cube.data.materials[0] = material
     else:
@@ -719,40 +717,58 @@ def create_cube_with_wireframe(
 def add_boxes(
     *,
     scene,
-    boxes_pred: typing.Dict[str, np.ndarray] = None,
-    boxes_gt: typing.Dict[str, np.ndarray] = None,
+    boxes: typing.Dict[str, np.ndarray],
+    box_colors_rgba_f64: np.ndarray,
     confidence_threshold: float = 0.0,
-    bounding_box_wire_frame_scale=0.2,
-    name_prefix: str = "boxes",
+    bounding_box_wire_frame_scale: float = 0.2,
+    verbose: bool = False,
 ):
-    visu_boxes = []
-    if boxes_pred is not None:
-        num_boxes = boxes_pred["pos"].shape[0]
-        box_colors = np.ones((num_boxes, 4)) * np.array([[0.0, 0.0, 1.0, 1.0],])
-        visu_boxes.append({"boxes": boxes_pred,
-            "colors_rgba": box_colors})
-    if boxes_gt is not None:
-        num_boxes = boxes_gt["pos"].shape[0]
-        box_colors = np.ones((num_boxes, 4)) * np.array([[1.0, 0.0, 0.0, 1.0],])
-        visu_boxes.append({"boxes": boxes_gt,
-            "colors_rgba": box_colors})
+    """
+    supports only boxes with yaw rotation
 
-    for boxes_dict in visu_boxes:
-        boxes = boxes_dict["boxes"]
-        box_colors = boxes_dict["colors_rgba"]
+    scene: blender py scene
+    boxes: dictionairy with
+        * 'pos': np.ndarray with shape [num_boxes, 3] (i.e. box positions in 3d)
+        * 'rot': np.ndarray with shape [num_boxes, 1] (i.e. box yaw angles)
+        * 'dims': np.ndarray with shape [num_boxes, 3] (i.e. box size length, width, height)
+        * 'probs': np.ndarray with shape [num_boxes, 1] (i.e. box confidence)
+    box_colors_rgba_f64: np.ndarray with shape [num_boxes, 4], i.e. a color for each box
+    confidence_threshold: boxes below this threshold are discarded
+    bounding_box_wire_frame_scale: this is the thickness of the box wireframe (in meters I think)
+    """
 
-        num_boxes = boxes["pos"].shape[0]
-        for box_idx in range(num_boxes):
-            if np.squeeze(boxes["probs"][box_idx]) < confidence_threshold:
-                continue
-            print("Add box at", boxes["pos"][box_idx],
-                " - rotation ", boxes["rot"][box_idx])
-            cube = create_cube_with_wireframe(
-                position=boxes["pos"][box_idx],
-                scale=boxes["dims"][box_idx],
-                rotation=(0.0, 0.0, boxes["rot"][box_idx],),
-                wireframe_scale=bounding_box_wire_frame_scale,
-                color=box_colors[box_idx],
-                )
-            scene.collection.objects.link(cube)
+    assert "pos" in boxes, "need box positions with key 'pos' to work!"
+    assert "dims" in boxes, "need box dimensions with key 'dims' to work!"
+    assert "rot" in boxes, "need box rotations (yaw angle) with key 'rot' to work!"
 
+    assert (
+        box_colors_rgba_f64 <= 1.0
+    ).all(), "this code is only tested with f64 colors <= 1.0!"
+
+    num_boxes = boxes["pos"].shape[0]
+    for box_idx in range(num_boxes):
+        box_confidence = np.squeeze(boxes["probs"][box_idx])
+        if box_confidence < confidence_threshold:
+            if verbose:
+                print(f"Discarding box #{box_idx} with confidence {box_confidence}")
+            continue
+        if verbose:
+            print(
+                f"Add box #{box_idx} at position: ",
+                boxes["pos"][box_idx],
+                ", rotation: ",
+                boxes["rot"][box_idx],
+                f", confidence: {box_confidence}",
+            )
+        cube = create_cube_with_wireframe(
+            position=boxes["pos"][box_idx],
+            scale=boxes["dims"][box_idx],
+            rotation=(
+                0.0,
+                0.0,
+                boxes["rot"][box_idx],
+            ),
+            wireframe_scale=bounding_box_wire_frame_scale,
+            color=box_colors_rgba_f64[box_idx],
+        )
+        scene.collection.objects.link(cube)
