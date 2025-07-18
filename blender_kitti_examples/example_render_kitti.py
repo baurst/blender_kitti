@@ -22,6 +22,7 @@ from .data import (
     get_pseudo_flow,
 )
 import bpy
+import mathutils
 
 
 def dry_render(_scene, cameras, output_path):
@@ -40,7 +41,26 @@ def dry_render(_scene, cameras, output_path):
 
 
 @needs_bpy_bmesh(alternative_func=dry_render)
-def render(scene, cameras, output_path, *, bpy):
+def render(scene, cameras, output_path, *, bpy, gpu_compute):
+    if gpu_compute:
+        preferences = bpy.context.preferences
+        cycles_preferences = preferences.addons["cycles"].preferences
+        cycles_preferences.refresh_devices()
+
+        scene.cycles.device = "GPU"
+        scene.render.engine = "CYCLES"
+        for sub_scene in bpy.data.scenes:
+            sub_scene.cycles.device = "GPU"
+
+        bpy.context.preferences.addons["cycles"].preferences.compute_device_type = (
+            "CUDA"
+        )
+
+        print(bpy.context.preferences.addons["cycles"].preferences.compute_device_type)
+        for some_dict in bpy.context.preferences.addons["cycles"].preferences.devices:
+            some_dict["use"] = 1  # Using all devices, include GPU and CPU
+            print(some_dict["name"], some_dict["use"])
+
     for cam in cameras:
         if isinstance(output_path, str):
             p = output_path.format(cam.data.name)
@@ -68,15 +88,16 @@ def render_kitti_point_cloud(gpu_compute=False):
     scene.render.resolution_y = 480
     # alpha background
     scene.render.film_transparent = True
-    #
-    if gpu_compute:
-        scene.cycles.device = "GPU"
-    else:
-        scene.cycles.device = "CPU"
 
     point_cloud, colors = get_semantic_kitti_point_cloud()
     _ = add_point_cloud(points=point_cloud, colors=colors, scene=scene)
-    render(scene, cameras, "/tmp/blender_kitti_render_point_cloud_{}.png", bpy=bpy)
+    render(
+        scene,
+        cameras,
+        "/tmp/blender_kitti_render_point_cloud_{}.png",
+        bpy=bpy,
+        gpu_compute=gpu_compute,
+    )
 
 
 def render_kitti_scene_flow(gpu_compute=False):
@@ -89,11 +110,6 @@ def render_kitti_scene_flow(gpu_compute=False):
     scene.render.resolution_y = 480
     # alpha background
     scene.render.film_transparent = True
-    #
-    if gpu_compute:
-        scene.cycles.device = "GPU"
-    else:
-        scene.cycles.device = "CPU"
 
     # reduce number of points, especially near vehicle
     point_cloud, _ = get_semantic_kitti_point_cloud()
@@ -107,9 +123,19 @@ def render_kitti_scene_flow(gpu_compute=False):
 
     flow, colors = get_pseudo_flow(point_cloud_downsample)
     _ = add_flow_mesh(
-        point_cloud=point_cloud_downsample, flow=flow, colors_rgba=colors, scene=scene
+        point_cloud=point_cloud_downsample,
+        flow=flow,
+        colors_rgba=colors,
+        scene=scene,
+        mathutils=mathutils,
     )
-    render(scene, cameras, "/tmp/blender_kitti_render_scene_flow_{}.png")
+    render(
+        scene,
+        cameras,
+        "/tmp/blender_kitti_render_scene_flow_{}.png",
+        bpy=bpy,
+        gpu_compute=gpu_compute,
+    )
 
 
 def render_kitti_bounding_boxes(gpu_compute=True):
@@ -121,11 +147,6 @@ def render_kitti_bounding_boxes(gpu_compute=True):
     scene.render.resolution_y = 1024
     # alpha background
     scene.render.film_transparent = True
-    #
-    if gpu_compute:
-        scene.cycles.device = "GPU"
-    else:
-        scene.cycles.device = "CPU"
 
     point_cloud, colors = get_semantic_kitti_point_cloud()
     _ = add_point_cloud(points=point_cloud, colors=colors, scene=scene)
@@ -148,7 +169,7 @@ def render_kitti_bounding_boxes(gpu_compute=True):
         "probs": np.random.rand(num_pred_boxes, 1),
     }
 
-    pred_box_colors = np.random.rand((boxes_pred["pos"].shape[0], 4))
+    pred_box_colors = np.random.rand(boxes_pred["pos"].shape[0], 4)
     pred_box_colors[:, -1] = 1.0
 
     _ = add_boxes(
@@ -221,7 +242,13 @@ def render_kitti_bounding_boxes(gpu_compute=True):
         verbose=True,
     )
 
-    render(scene, cameras, "/tmp/blender_kitti_render_boxes_{}.png", bpy=bpy)
+    render(
+        scene,
+        cameras,
+        "/tmp/blender_kitti_render_boxes_{}.png",
+        bpy=bpy,
+        gpu_compute=gpu_compute,
+    )
 
 
 def render_kitti_voxels(gpu_compute=False):
@@ -244,12 +271,13 @@ def render_kitti_voxels(gpu_compute=False):
     scene.render.resolution_y = 480
     # alpha background
     scene.render.film_transparent = True
-    #
-    if gpu_compute:
-        scene.cycles.device = "GPU"
-    else:
-        scene.cycles.device = "CPU"
 
     voxels, colors = get_semantic_kitti_voxels()
     _ = add_voxels(voxels=voxels, colors=colors, scene=scene)
-    render(scene, [cam_top, cam_main], "/tmp/blender_kitti_render_voxels_{}.png")
+    render(
+        scene,
+        [cam_top, cam_main],
+        "/tmp/blender_kitti_render_voxels_{}.png",
+        bpy=bpy,
+        gpu_compute=gpu_compute,
+    )

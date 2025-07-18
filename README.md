@@ -38,16 +38,16 @@ $ ./bin/pip3 install -e <path_to_blender_kitti>
 $ blender --background --python-console
 >>> import blender_kitti_examples
 >>> # render (bundled) example point cloud with semantic colors
->>> blender_kitti_examples.render_kitti_point_cloud()
+>>> blender_kitti_examples.render_kitti_point_cloud(gpu_compute=True)
 >>>
 >>> # render (bundled) example voxel grid with semantic colors
->>> blender_kitti_examples.render_kitti_voxels()
+>>> blender_kitti_examples.render_kitti_voxels(gpu_compute=True)
 >>>
 >>> # render (bundled) scene flow point cloud with hsv coloring
->>> blender_kitti_examples.render_kitti_scene_flow()
+>>> blender_kitti_examples.render_kitti_scene_flow(gpu_compute=True)
 >>>
 >>> # render (bundled) point cloud with some random bounding boxes
->>> blender_kitti_examples.render_kitti_bounding_boxes()
+>>> blender_kitti_examples.render_kitti_bounding_boxes(gpu_compute=True)
 ```
 
 ## Work on a scene in Blender

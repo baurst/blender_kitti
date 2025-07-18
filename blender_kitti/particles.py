@@ -237,9 +237,7 @@ def create_voxel_particle_obj(
     obj_particle = create_cube(name_prefix + "_cube")
     scene.collection.objects.link(obj_particle)
 
-    obj_voxels, color_selector = _create_particle_instancer(
-        name_prefix, coords, obj_particle
-    )
+    obj_voxels = _create_particle_instancer(name_prefix, coords, obj_particle)
     if scene is not None:
         scene.collection.objects.link(obj_voxels)
 
@@ -419,7 +417,7 @@ def add_point_cloud(
 
 
 def read_verts(mesh):
-    mverts_co = np.zeros((len(mesh.vertices) * 3), dtype=np.float)
+    mverts_co = np.zeros((len(mesh.vertices) * 3), dtype=np.float32)
     mesh.vertices.foreach_get("co", mverts_co)
     return np.reshape(mverts_co, (len(mesh.vertices), 3))
 
@@ -518,8 +516,8 @@ def add_flow_mesh(
         cap_ends=True,
         cap_tris=False,
         segments=10,
-        diameter1=arrow_shaft_diameter,
-        diameter2=arrow_shaft_diameter,
+        radius1=arrow_shaft_diameter / 2.0,
+        radius2=arrow_shaft_diameter / 2.0,
         depth=arrow_shaft_length,
         calc_uvs=False,
     )
@@ -531,8 +529,8 @@ def add_flow_mesh(
         cap_ends=True,
         cap_tris=False,
         segments=10,
-        diameter1=arrow_head_diameter,
-        diameter2=0.0,
+        radius1=arrow_head_diameter / 2.0,
+        radius2=0.0,
         depth=arrow_head_height,
         calc_uvs=False,
     )
@@ -561,15 +559,15 @@ def add_flow_mesh(
     npolygons = len(polygons)
     nloops = len(me.loops)
 
-    startloop = np.empty(npolygons, dtype=np.int)
-    loop_total = np.empty(npolygons, dtype=np.int)
-    polygon_indices = np.empty(npolygons, dtype=np.int)
+    startloop = np.empty(npolygons, dtype=int)
+    loop_total = np.empty(npolygons, dtype=int)
+    polygon_indices = np.empty(npolygons, dtype=int)
 
     polygons.foreach_get("index", polygon_indices)
     polygons.foreach_get("loop_start", startloop)
     polygons.foreach_get("loop_total", loop_total)
 
-    vertex_index = np.empty(nloops, dtype=np.int)
+    vertex_index = np.empty(nloops, dtype=int)
     me.loops.foreach_get("vertex_index", vertex_index)
     assert sum(loop_total) == len(vertex_index)
     mesh_verts = read_verts(me)
