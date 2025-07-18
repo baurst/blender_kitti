@@ -4,11 +4,14 @@ import typing
 import logging
 import numpy as np
 
-from .bpy_helper import needs_bpy_bmesh
+import bpy
+import bmesh
+
 from .material_shader import (
     create_flow_material,
     create_simple_material,
     create_uv_mapped_material,
+    add_nodes_to_material,
 )
 
 
@@ -23,8 +26,7 @@ handler.setLevel(logging.INFO)
 logger.addHandler(handler)
 
 
-@needs_bpy_bmesh()
-def _create_instancer_mesh(positions: np.ndarray, name="mesh_points", *, bpy):
+def _create_instancer_mesh(positions: np.ndarray, name="mesh_points"):
     """Create mesh with where each point is a pseudo face
     (three vertices at the same position.
     """
@@ -57,9 +59,8 @@ def _create_instancer_mesh(positions: np.ndarray, name="mesh_points", *, bpy):
     return mesh
 
 
-@needs_bpy_bmesh()
 def _create_instancer_obj(
-    positions: np.ndarray, name_instancer_obj: str, name_mesh: str, *, bpy
+    positions: np.ndarray, name_instancer_obj: str, name_mesh: str
 ):
     assert positions.ndim == 2 and positions.shape[1] == 3
 
@@ -85,8 +86,7 @@ def _create_instancer_obj(
     return obj_instancer
 
 
-@needs_bpy_bmesh()
-def _create_color_image(colors_rgba: np.ndarray, name: str, *, bpy):
+def _create_color_image(colors_rgba: np.ndarray, name: str):
     assert colors_rgba.ndim == 2
     # dtype and alpha channel checks
     if colors_rgba.dtype == np.float32:
@@ -124,41 +124,71 @@ def _create_color_image(colors_rgba: np.ndarray, name: str, *, bpy):
 def _create_particle_instancer(
     name_prefix: str,
     positions: np.ndarray,
-    colors: typing.Union[None, np.ndarray],
     obj_particle,
 ):
     # created entities
     name_mesh = "{}_mesh".format(name_prefix)
     name_obj = "{}_obj_instancer".format(name_prefix)
-    name_image = "{}_colors".format(name_prefix)
-    name_material = "{}_material".format(name_prefix)
 
     obj_instancer = _create_instancer_obj(positions, name_obj, name_mesh)
-
-    if colors is not None:
-        image = _create_color_image(colors, name_image)
-        # the particle obj will use this material
-        material, color_selector = create_uv_mapped_material(image, name_material)
-    else:
-        material, color_selector = create_simple_material(
-            base_color=(0.1, 0.1, 0.1, 1.0), name_material=name_material
-        )
 
     obj_particle.parent = obj_instancer
     # instancing from 'fake' faces is necessary for uv mapping to work.
     obj_instancer.instance_type = "FACES"
     obj_instancer.show_instancer_for_render = False
-
-    obj_particle.data.materials.append(material)
-    return obj_instancer, color_selector
+    return obj_instancer
 
 
-@needs_bpy_bmesh()
-def create_cube(name_prefix: str, *, edge_length: float = 0.16, bpy, bmesh):
+def _add_material_to_particle(name_prefix, colors, obj_particle, material=None):
+    """
 
+    :param name_prefix:
+    :param colors:
+    :param obj_particle:
+    :return:
+    """
+
+    name_image = "{}_colors".format(name_prefix)
+    name_material = "{}_material".format(name_prefix)
+
+    if colors is not None:
+        if isinstance(colors, np.ndarray):
+            colors = [colors]
+            name_image = [name_image]
+            name_material = [name_material]
+        else:
+            name_image = [f"{name_image}_{i}" for i in range(len(colors))]
+            name_material = [f"{name_material}_{i}" for i in range(len(colors))]
+
+        color_selector = []
+        for color_arr, ni, nm in zip(colors, name_image, name_material):
+            image = _create_color_image(color_arr, ni)
+            if material is None:
+                # the particle obj will use this material
+                logger.info(f"Creating material {ni}.")
+                _material, _cs = create_uv_mapped_material(image, nm)
+            else:
+                # Todo (risteon) does return color link, not color selector
+                _cs = add_nodes_to_material(material, image)
+                _material = material
+
+            obj_particle.data.materials.append(_material)
+            color_selector.append(_cs)
+    else:
+        material, color_selector = create_simple_material(
+            base_color=(0.1, 0.1, 0.1, 1.0), name_material=name_material
+        )
+        obj_particle.data.materials.append(material)
+
+    return color_selector
+
+
+def create_cube(name_prefix: str, *, edge_length: float = 0.16):
     bm = bmesh.new()
     bmesh.ops.create_cube(
-        bm, size=edge_length, calc_uvs=False,
+        bm,
+        size=edge_length,
+        calc_uvs=False,
     )
 
     me = bpy.data.meshes.new("{}_mesh".format(name_prefix))
@@ -169,20 +199,19 @@ def create_cube(name_prefix: str, *, edge_length: float = 0.16, bpy, bmesh):
     return obj
 
 
-@needs_bpy_bmesh()
 def create_icosphere(
     name_prefix: str,
     *,
     subdivisions: int = 3,
     radius: float = 0.02,
     use_smooth: bool = True,
-    bpy,
-    bmesh,
 ):
-
     bm = bmesh.new()
     bmesh.ops.create_icosphere(
-        bm, subdivisions=subdivisions, diameter=2.0 * radius, calc_uvs=False,
+        bm,
+        subdivisions=subdivisions,
+        radius=radius,
+        calc_uvs=False,
     )
 
     mesh = bpy.data.meshes.new("{}_mesh".format(name_prefix))
@@ -199,25 +228,34 @@ def create_icosphere(
 
 
 def create_voxel_particle_obj(
-    coords: np.ndarray, colors: np.ndarray, name_prefix: str, scene
+    coords: np.ndarray,
+    colors: np.ndarray,
+    name_prefix: str,
+    scene,
+    material=None,
 ):
     obj_particle = create_cube(name_prefix + "_cube")
     scene.collection.objects.link(obj_particle)
 
     obj_voxels, color_selector = _create_particle_instancer(
-        name_prefix, coords, colors, obj_particle
+        name_prefix, coords, obj_particle
     )
     if scene is not None:
         scene.collection.objects.link(obj_voxels)
+
+    color_selector = _add_material_to_particle(
+        name_prefix, colors, obj_particle, material
+    )
     return obj_voxels, color_selector
 
 
 def add_voxels(
+    scene,
     *,
     voxels: np.ndarray,
     colors: np.ndarray = None,
     name_prefix: str = "voxels",
-    scene,
+    material=None,
 ):
     """
 
@@ -225,6 +263,7 @@ def add_voxels(
     :param colors:
     :param name_prefix:
     :param scene:
+    :param material:
     :return:
     """
     assert voxels.ndim == 3
@@ -240,7 +279,7 @@ def add_voxels(
     colors = colors[voxels]
 
     obj_voxels, color_selector = create_voxel_particle_obj(
-        coords, colors, name_prefix, scene
+        coords, colors, name_prefix, scene, material
     )
     return obj_voxels, {"color_selector": color_selector}
 
@@ -278,29 +317,105 @@ def add_voxel_list(
     return obj_voxels, {"color_selector": color_selector}
 
 
-def add_point_cloud(
+def _add_point_cloud_chunk(
+    scene,
     *,
     points: np.ndarray,
     colors: np.ndarray = None,
     reflectivity: np.ndarray = None,
     row_splits: np.ndarray = None,
     name_prefix: str = "point_cloud",
-    scene,
     particle_radius: float = 0.02,
+    material=None,
+    particle_obj=None,
 ):
-    # created entities
-    obj_particle = create_icosphere(name_prefix + "_icosphere", radius=particle_radius)
-    scene.collection.objects.link(obj_particle)
+    if particle_obj is None:
+        # created entities
+        obj_particle = create_icosphere(
+            name_prefix + "_icosphere", radius=particle_radius
+        )
+        scene.collection.objects.link(obj_particle)
+    else:
+        obj_particle = particle_obj
 
-    obj_point_cloud, color_selector = _create_particle_instancer(
-        name_prefix, points, colors, obj_particle
+    obj_point_cloud = _create_particle_instancer(name_prefix, points, obj_particle)
+    scene.collection.objects.link(obj_point_cloud)
+    color_selector = _add_material_to_particle(
+        name_prefix, colors, obj_particle, material
     )
 
-    scene.collection.objects.link(obj_point_cloud)
     return (
         obj_point_cloud,
         {"color_selector": color_selector, "obj_particle": obj_particle},
     )
+
+
+def add_point_cloud(
+    scene,
+    *,
+    points: np.ndarray,
+    colors: np.ndarray = None,
+    reflectivity: np.ndarray = None,
+    row_splits: np.ndarray = None,
+    name_prefix: str = "point_cloud",
+    particle_radius: float = 0.02,
+    material=None,
+    particle_obj=None,
+):
+    """
+
+    :param scene:
+    :param points:
+    :param colors:
+    :param reflectivity:
+    :param row_splits:
+    :param name_prefix:
+    :param particle_radius:
+    :param material: If given, just add nodes to this material
+    :param particle_obj: If given, use this object
+    :return:
+    """
+    num_points = points.shape[0]
+    max_points_per_chunk = (
+        60000  # this is limited due to how GPUs work (texture memory)
+    )
+    if num_points < max_points_per_chunk:
+        return _add_point_cloud_chunk(
+            scene,
+            points=points,
+            colors=colors,
+            reflectivity=reflectivity,
+            row_splits=row_splits,
+            name_prefix=name_prefix,
+            particle_radius=particle_radius,
+            material=material,
+            particle_obj=particle_obj,
+        )
+    else:
+        print("Chunking point cloud!")
+        assert reflectivity is None, "chunking not yet supported"
+        assert row_splits is None, "chunking not yet supported"
+        assert material is None, "chunking not yet supported"
+        assert particle_obj is None, "chunking not yet supported"
+        num_chunks = num_points // max_points_per_chunk
+        sub_points = np.array_split(points, num_chunks)
+        num_chunks = len(sub_points)
+        if colors is None:
+            sub_colors = [
+                None,
+            ] * num_chunks
+        else:
+            sub_colors = np.array_split(colors, num_chunks)
+        for chunk_idx, (pts_chunk, color_chunk) in enumerate(
+            zip(sub_points, sub_colors)
+        ):
+            _add_point_cloud_chunk(
+                scene,
+                points=pts_chunk,
+                colors=color_chunk,
+                name_prefix=name_prefix + f"_chunk_{chunk_idx}",
+                particle_radius=particle_radius,
+            )
 
 
 def read_verts(mesh):
@@ -356,7 +471,7 @@ def bmesh_join(list_of_bmeshes, list_of_matrices, *, normal_update=False, bmesh)
 
 
 def simple_scale_matrix(factor: np.array, direction: np.array):
-    dir_len = np.sqrt(np.sum(direction ** 2))
+    dir_len = np.sqrt(np.sum(direction**2))
     assert dir_len > 0.0, "direction vector of scale matrix may not have length zero"
     normalized_dir = direction / dir_len
     factor = 1.0 - factor
@@ -367,7 +482,6 @@ def simple_scale_matrix(factor: np.array, direction: np.array):
     return scale_matrix
 
 
-@needs_bpy_bmesh()
 def add_flow_mesh(
     *,
     point_cloud: np.ndarray,
@@ -380,8 +494,6 @@ def add_flow_mesh(
     arrow_head_diameter: float = 0.15,
     scene,
     mathutils,
-    bpy,
-    bmesh,
 ):
     if point_cloud.dtype != np.float32:
         print(
@@ -485,7 +597,7 @@ def add_flow_mesh(
 
         flow_vec = flow[flow_vec_idx]
 
-        flow_vec_unit = flow_vec / np.sqrt(np.sum(flow_vec ** 2))
+        flow_vec_unit = flow_vec / np.sqrt(np.sum(flow_vec**2))
 
         # rotation matrix R that rotates unit vector a onto unit vector b.
         v = np.cross(arrow_head_unit, flow_vec_unit)
@@ -563,3 +675,101 @@ def add_flow_mesh(
         scene.collection.objects.link(obj)
 
     return obj
+
+
+def create_cube_with_wireframe(
+    position: np.ndarray,
+    scale: np.ndarray,
+    rotation: np.ndarray,
+    wireframe_scale: float,
+    color: np.ndarray,
+):
+    # create a mesh cube
+    bpy.ops.object.select_all(action="DESELECT")
+    bpy.ops.mesh.primitive_cube_add(
+        size=1, enter_editmode=False, align="WORLD", location=position
+    )
+    cube = bpy.context.object
+
+    # set scale and rotation
+    cube.scale = scale
+    cube.rotation_euler = rotation
+    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+
+    # add wireframe modifier
+    bpy.ops.object.modifier_add(type="WIREFRAME")
+    wireframe_modifier = cube.modifiers[-1]
+    wireframe_modifier.thickness = wireframe_scale
+
+    # create a new material with the given color
+    material = bpy.data.materials.new(name="CubeMaterial")
+    material.use_nodes = False
+    material.diffuse_color = color
+
+    # assign the material to the cube
+    if len(cube.data.materials) > 0:
+        cube.data.materials[0] = material
+    else:
+        cube.data.materials.append(material)
+
+    return cube
+
+
+def add_boxes(
+    *,
+    scene,
+    boxes: typing.Dict[str, np.ndarray],
+    box_colors_rgba_f64: np.ndarray,
+    confidence_threshold: float = 0.0,
+    bounding_box_wire_frame_scale: float = 0.2,
+    verbose: bool = False,
+):
+    """
+    supports only boxes with yaw rotation
+
+    scene: blender py scene
+    boxes: dictionairy with
+        * 'pos': np.ndarray with shape [num_boxes, 3] (i.e. box positions in 3d)
+        * 'rot': np.ndarray with shape [num_boxes, 1] (i.e. box yaw angles)
+        * 'dims': np.ndarray with shape [num_boxes, 3] (i.e. box size length, width, height)
+        * 'probs': np.ndarray with shape [num_boxes, 1] (i.e. box confidence)
+    box_colors_rgba_f64: np.ndarray with shape [num_boxes, 4], i.e. a color for each box
+    confidence_threshold: boxes below this threshold are discarded
+    bounding_box_wire_frame_scale: this is the thickness of the box wireframe (in meters I think)
+    """
+
+    assert "pos" in boxes, "need box positions with key 'pos' to work!"
+    assert "dims" in boxes, "need box dimensions with key 'dims' to work!"
+    assert "rot" in boxes, "need box rotations (yaw angle) with key 'rot' to work!"
+
+    assert (
+        box_colors_rgba_f64 <= 1.0
+    ).all(), "this code is only tested with f64 colors <= 1.0!"
+
+    num_boxes = boxes["pos"].shape[0]
+    for box_idx in range(num_boxes):
+        box_confidence = np.squeeze(boxes["probs"][box_idx])
+        if box_confidence < confidence_threshold:
+            if verbose:
+                print(f"Discarding box #{box_idx} with confidence {box_confidence}")
+            continue
+        if verbose:
+            print(
+                f"Add box #{box_idx} at position: ",
+                boxes["pos"][box_idx],
+                ", rotation: ",
+                boxes["rot"][box_idx],
+                f", confidence: {box_confidence}",
+            )
+        cube = create_cube_with_wireframe(
+            position=boxes["pos"][box_idx],
+            scale=boxes["dims"][box_idx],
+            rotation=(
+                0.0,
+                0.0,
+                boxes["rot"][box_idx],
+            ),
+            wireframe_scale=bounding_box_wire_frame_scale,
+            color=box_colors_rgba_f64[box_idx],
+        )
+        scene.collection.objects.link(cube)
