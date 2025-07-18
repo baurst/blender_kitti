@@ -54,7 +54,7 @@ def create_mesh(
     mesh.polygons.foreach_set("loop_total", loop_total)
     mesh.polygons.foreach_set(
         "use_smooth",
-        np.full(fill_value=use_smooth, shape=[len(mesh.polygons)], dtype=np.bool),
+        np.full(fill_value=use_smooth, shape=[len(mesh.polygons)], dtype=bool),
     )
 
     attr_keys_rgb = set()

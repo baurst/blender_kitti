@@ -8,7 +8,7 @@ from ruamel.yaml import YAML
 
 def unpack(compressed: np.ndarray):
     assert compressed.ndim == 1
-    uncompressed = np.zeros(compressed.shape[0] * 8, dtype=np.bool)
+    uncompressed = np.zeros(compressed.shape[0] * 8, dtype=bool)
     for b in range(8):
         uncompressed[b::8] = compressed >> (7 - b) & 1
     return uncompressed

@@ -10,7 +10,7 @@ setup(
     license="MIT",
     packages=["blender_kitti", "blender_kitti_examples"],
     zip_safe=False,
-    install_requires=["ruamel.yaml", "click", "numpy", "decorator",],
+    install_requires=["ruamel.yaml", "matplotlib", "click", "numpy", "decorator",],
     python_requires=">=3.5",
     entry_points={"console_scripts": ["blender_kitti_render=blender_kitti.cli:render"]},
 )

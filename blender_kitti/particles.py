@@ -220,7 +220,7 @@ def create_icosphere(
 
     mesh.polygons.foreach_set(
         "use_smooth",
-        np.full(fill_value=use_smooth, shape=[len(mesh.polygons)], dtype=np.bool),
+        np.full(fill_value=use_smooth, shape=[len(mesh.polygons)], dtype=bool),
     )
 
     obj = bpy.data.objects.new("{}_obj".format(name_prefix), mesh)
@@ -267,7 +267,7 @@ def add_voxels(
     :return:
     """
     assert voxels.ndim == 3
-    assert voxels.dtype == np.bool
+    assert voxels.dtype == np.bool_
 
     dtype = np.float32
     deltas = np.asarray([0.2, 0.2, 0.2], dtype=dtype)
